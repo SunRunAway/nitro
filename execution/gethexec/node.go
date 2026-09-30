@@ -483,6 +483,11 @@ func CreateExecutionNode(
 		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, executionDB)),
 		Public:    false,
 	})
+	apis = append(apis, rpc.API{
+		Namespace: "arbstream",
+		Service:   NewReceiptStreamAPI(execEngine.receiptStream),
+		Public:    false,
+	})
 	if config.RPCServer.Enable {
 		apis = append(apis, rpc.API{
 			Namespace:     execution.RPCNamespace,

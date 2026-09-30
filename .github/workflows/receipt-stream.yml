@@ -1,0 +1,56 @@
+---
+# Fork-only CI: the upstream workflows need OffchainLabs runners and are not run here.
+# Builds only the native dependencies of the Go packages changed by this fork, then tests them.
+name: Receipt stream
+
+on:
+  push:
+    branches-ignore: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup CI
+        uses: ./.github/actions/ci-setup
+
+      # ci-setup only caches toolchain downloads; these outputs are the slow part and this fork does not change them.
+      - name: Cache stylus library
+        id: cache-stylus
+        uses: actions/cache@v5
+        with:
+          path: |
+            target/include/arbitrator.h
+            target/lib/libstylus.a
+          key: ${{ runner.os }}-stylus-${{ hashFiles('Cargo.lock', 'crates/**/*.rs', 'crates/**/Cargo.toml', 'crates/stylus/cbindgen.toml') }}
+
+      - name: Build stylus library
+        if: steps.cache-stylus.outputs.cache-hit != 'true'
+        run: make -j4 build-prover-header build-prover-lib
+
+      - name: Cache solgen
+        id: cache-solgen
+        uses: actions/cache@v5
+        with:
+          path: solgen/go
+          key: ${{ runner.os }}-solgen-${{ hashFiles('solgen/gen.go', 'contracts/src/**', 'contracts-legacy/src/**', 'contracts-local/src/**', 'safe-smart-account/contracts/**') }}
+
+      - name: Build solgen
+        if: steps.cache-solgen.outputs.cache-hit != 'true'
+        run: make -j4 .make/solgen
+
+      - name: Build nitro
+        run: go build -o /dev/null ./cmd/nitro
+
+      - name: Test
+        run: go test -count=1 -run 'TestReceiptStream' ./execution/gethexec/

@@ -301,6 +301,25 @@ func ProduceBlock(
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
 ) (*types.Block, *state.StateDB, types.Receipts, error) {
+	return ProduceBlockWithReceiptHook(message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, isMsgForPrefetch, runCtx, exposeMultiGas, nil)
+}
+
+// ProduceBlockWithReceiptHook is ProduceBlock with an optional onReceipt, called synchronously right after
+// each transaction's receipt is added to the block, in transaction order. The header passed to onReceipt is
+// still being built: its number and time are final, its hash is not. Receipts and logs get their final block
+// hash only after the whole block is produced, and the block may still fail to be produced after onReceipt
+// has been called.
+func ProduceBlockWithReceiptHook(
+	message *arbostypes.L1IncomingMessage,
+	delayedMessagesRead uint64,
+	lastBlockHeader *types.Header,
+	statedb *state.StateDB,
+	chainContext core.ChainContext,
+	isMsgForPrefetch bool,
+	runCtx *core.MessageRunContext,
+	exposeMultiGas bool,
+	onReceipt func(*types.Header, *types.Receipt),
+) (*types.Block, *state.StateDB, types.Receipts, error) {
 	chainConfig := chainContext.Config()
 	lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID, lastArbosVersion)
@@ -310,8 +329,8 @@ func ProduceBlock(
 	}
 	hooks := NewNoopSequencingHooks(txes)
 
-	return ProduceBlockAdvanced(
-		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas, nil,
+	return produceBlockAdvanced(
+		message.Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, hooks, isMsgForPrefetch, runCtx, exposeMultiGas, nil, onReceipt,
 	)
 }
 
@@ -327,6 +346,22 @@ func ProduceBlockAdvanced(
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
 	addressChecker state.AddressChecker,
+) (*types.Block, *state.StateDB, types.Receipts, error) {
+	return produceBlockAdvanced(l1Header, delayedMessagesRead, lastBlockHeader, statedb, chainContext, sequencingHooks, isMsgForPrefetch, runCtx, exposeMultiGas, addressChecker, nil)
+}
+
+func produceBlockAdvanced(
+	l1Header *arbostypes.L1IncomingMessageHeader,
+	delayedMessagesRead uint64,
+	lastBlockHeader *types.Header,
+	statedb *state.StateDB,
+	chainContext core.ChainContext,
+	sequencingHooks SequencingHooks,
+	isMsgForPrefetch bool,
+	runCtx *core.MessageRunContext,
+	exposeMultiGas bool,
+	addressChecker state.AddressChecker,
+	onReceipt func(*types.Header, *types.Receipt),
 ) (*types.Block, *state.StateDB, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, false)
@@ -688,6 +723,9 @@ func ProduceBlockAdvanced(
 
 		buildState.complete = append(buildState.complete, tx)
 		buildState.receipts = append(buildState.receipts, receipt)
+		if onReceipt != nil {
+			onReceipt(header, receipt)
+		}
 
 		if isUserTx {
 			if buildState.activeGroupCP == nil {

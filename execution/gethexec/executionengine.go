@@ -292,6 +292,8 @@ type ExecutionEngine struct {
 	transactionFiltererRPCClient   *TransactionFiltererRPCClient
 	filteringReportRPCClient       *FilteringReportRPCClient
 	disableDelayedSequencingFilter bool
+
+	receiptStream *ReceiptStream
 }
 
 func NewL1PriceData() *L1PriceData {
@@ -325,6 +327,7 @@ func NewExecutionEngine(
 		disableDelayedSequencingFilter: disableDelayedSequencingFilter,
 		addressChecker:                 addressChecker,
 		filteringReportRPCClient:       filteringReportRPCClient,
+		receiptStream:                  newReceiptStream(),
 	}
 }
 
@@ -1033,7 +1036,12 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return block, statedb, receipts, nil
 	}
 
-	block, statedb, receipts, err := arbos.ProduceBlock(
+	// Only blocks digested from the transaction streamer are streamed; prefetch runs ahead speculatively.
+	var onReceipt func(*types.Header, *types.Receipt)
+	if !isMsgForPrefetch && !isDelayedSequencing {
+		onReceipt = s.receiptStream.publishReceipt
+	}
+	block, statedb, receipts, err := arbos.ProduceBlockWithReceiptHook(
 		msg.Message,
 		msg.DelayedMessagesRead,
 		currentHeader,
@@ -1042,6 +1050,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		isMsgForPrefetch,
 		runCtx,
 		s.exposeMultiGas,
+		onReceipt,
 	)
 
 	return block, statedb, receipts, err
@@ -1247,6 +1256,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	if err != nil {
 		return nil, err
 	}
+	s.receiptStream.publishBlock(block)
 	blockCalcTime := time.Since(startTime)
 	blockExecutionTimer.Update(blockCalcTime.Nanoseconds())
 
