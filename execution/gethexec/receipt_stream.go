@@ -19,9 +19,9 @@ const receiptStreamBuffer = 4096
 // ReceiptStreamEvent is one notification of the arbstream_subscribe("receipts") subscription.
 // Only blocks digested from the transaction streamer are streamed. While such a block is produced,
 // one event with Receipt set is sent right after each transaction is applied, in transaction order.
-// Once the whole block is produced, and before it is written to the database, one event with Block set is sent.
-// Events of a block that fails to be produced are not retracted; the block is produced again from its first
-// transaction. Events a subscriber cannot keep up with are dropped, which the subscriber sees as a gap in
+// Once the whole block is written to the database, one event with Block set is sent, so reads at that block
+// succeed. Events of a block that fails to be produced or written are not retracted; the block is produced again
+// from its first transaction. Events a subscriber cannot keep up with are dropped, which the subscriber sees as a gap in
 // block numbers or transaction indexes.
 type ReceiptStreamEvent struct {
 	BlockNumber    hexutil.Uint64   `json:"blockNumber"`

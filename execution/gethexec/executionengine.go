@@ -1256,7 +1256,6 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	if err != nil {
 		return nil, err
 	}
-	s.receiptStream.publishBlock(block)
 	blockCalcTime := time.Since(startTime)
 	blockExecutionTimer.Update(blockCalcTime.Nanoseconds())
 
@@ -1264,6 +1263,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	if err != nil {
 		return nil, err
 	}
+	s.receiptStream.publishBlock(block)
 	s.cacheL1PriceDataOfMsg(msgIdxToDigest, block, false)
 
 	if time.Now().After(s.nextScheduledVersionCheck) {
