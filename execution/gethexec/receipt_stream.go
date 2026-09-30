@@ -63,6 +63,7 @@ type ReceiptStream struct {
 	mu           sync.Mutex
 	subscribers  map[*receiptStreamSubscriber]struct{}
 	feedArrivals map[arbutil.MessageIndex]time.Time // messages received from the feed and not digested yet
+	digested     arbutil.MessageIndex               // last digested message; earlier messages are no longer recorded
 }
 
 type receiptStreamSubscriber struct {
@@ -107,10 +108,14 @@ func (s *ReceiptStream) publishReceipt(header *types.Header, txIndex int, txHash
 	})
 }
 
-// recordFeedArrival keeps the first arrival of a message; a message received again from another feed keeps its earlier time.
+// recordFeedArrival keeps the first arrival of a message; a message received again from another feed keeps its earlier time,
+// and one received again after being digested is not recorded.
 func (s *ReceiptStream) recordFeedArrival(msgIdx arbutil.MessageIndex, arrivedAt time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if msgIdx <= s.digested {
+		return
+	}
 	if _, ok := s.feedArrivals[msgIdx]; !ok {
 		s.feedArrivals[msgIdx] = arrivedAt
 	}
@@ -119,13 +124,11 @@ func (s *ReceiptStream) recordFeedArrival(msgIdx arbutil.MessageIndex, arrivedAt
 func (s *ReceiptStream) publishBlock(block *types.Block, msgIdx arbutil.MessageIndex) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Messages are digested one by one, so each digest removes only its own entry and the table holds just the
+	// messages received but not digested yet, even while the node catches up.
 	feedArrivedAt := s.feedArrivals[msgIdx]
-	// Messages up to msgIdx are digested; a message re-sent by the feed after being digested is dropped here too.
-	for idx := range s.feedArrivals {
-		if idx <= msgIdx {
-			delete(s.feedArrivals, idx)
-		}
-	}
+	delete(s.feedArrivals, msgIdx)
+	s.digested = msgIdx
 	if len(s.subscribers) == 0 {
 		return
 	}

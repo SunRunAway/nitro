@@ -69,6 +69,9 @@ func TestReceiptStreamSubscription(t *testing.T) {
 	require.Nil(t, got.Receipt)
 	require.Equal(t, &StreamedBlock{Hash: block.Hash(), TransactionCount: 1, FeedArrivedAt: arrivedAt}, got.Block)
 	require.Empty(t, stream.feedArrivals)
+	// A message received again after being digested is not recorded.
+	stream.recordFeedArrival(6, arrivedAt.Add(time.Second))
+	require.Empty(t, stream.feedArrivals)
 }
 
 // A subscriber that falls behind must not block block production; the dropped events show up as a gap.
