@@ -578,6 +578,10 @@ func mainImpl() int {
 		log.Error("failed to create consensus node", "err", err)
 		return 1
 	}
+	if execNode != nil {
+		// The receipt stream reports when each block's message arrived from the feed.
+		consensusNode.TxStreamer.SetFeedArrivalHook(execNode.ExecEngine.RecordFeedArrival)
+	}
 
 	// Validate sequencer's MaxTxDataSize and batchPoster's MaxSize params.
 	// SequencerInbox's maxDataSize is defaulted to 117964 which is 90% of Geth's 128KB tx size limit, leaving ~13KB for proving.

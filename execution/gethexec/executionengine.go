@@ -474,6 +474,12 @@ func (s *ExecutionEngine) SetConsensus(consensus consensus.FullConsensusClient) 
 	s.consensus = consensus
 }
 
+// RecordFeedArrival records when the message at msgIdx arrived from the sequencer feed; the receipt stream reports it
+// in the block event of that message.
+func (s *ExecutionEngine) RecordFeedArrival(msgIdx arbutil.MessageIndex, arrivedAt time.Time) {
+	s.receiptStream.recordFeedArrival(msgIdx, arrivedAt)
+}
+
 func (s *ExecutionEngine) BlockMetadataAtMessageIndex(ctx context.Context, msgIdx arbutil.MessageIndex) (common.BlockMetadata, error) {
 	if s.consensus != nil {
 		return s.consensus.BlockMetadataAtMessageIndex(msgIdx).Await(ctx)
@@ -1263,7 +1269,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.Mes
 	if err != nil {
 		return nil, err
 	}
-	s.receiptStream.publishBlock(block)
+	s.receiptStream.publishBlock(block, msgIdxToDigest)
 	s.cacheL1PriceDataOfMsg(msgIdxToDigest, block, false)
 
 	if time.Now().After(s.nextScheduledVersionCheck) {

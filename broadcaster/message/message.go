@@ -4,6 +4,7 @@ package message
 
 import (
 	"encoding/binary"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -48,6 +49,8 @@ type BroadcastFeedMessage struct {
 	BlockMetadata  common.BlockMetadata           `json:"blockMetadata,omitempty"`
 
 	CumulativeSumMsgSize uint64 `json:"-"`
+	// ArrivedAt is when a broadcast client of this node read the feed frame carrying the message.
+	ArrivedAt time.Time `json:"-"`
 }
 
 func (m *BroadcastFeedMessage) Size() uint64 {

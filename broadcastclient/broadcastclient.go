@@ -436,6 +436,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				continue
 			}
 			backoffDuration = bc.config().ReconnectInitialBackoff
+			arrivedAt := time.Now()
 
 			if msg != nil {
 				res := message.BroadcastMessage{}
@@ -467,6 +468,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 								log.Warn("ignoring nil feed message")
 								continue
 							}
+							message.ArrivedAt = arrivedAt
 
 							err := bc.isValidSignature(ctx, message)
 							if err != nil {

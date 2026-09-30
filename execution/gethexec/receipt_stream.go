@@ -5,12 +5,15 @@ package gethexec
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 // receiptStreamBuffer is the number of events queued per subscriber, about 40 seconds of the chain.
@@ -50,12 +53,16 @@ type StreamedLog struct {
 type StreamedBlock struct {
 	Hash             common.Hash  `json:"hash"`
 	TransactionCount hexutil.Uint `json:"transactionCount"`
+	// FeedArrivedAt is when this node first read the block's message from the sequencer feed;
+	// absent when the message did not arrive from the feed, such as when it is read from the parent chain.
+	FeedArrivedAt time.Time `json:"feedArrivedAt,omitzero"`
 }
 
 // ReceiptStream fans out receipt stream events to subscribers without blocking block production.
 type ReceiptStream struct {
-	mu          sync.Mutex
-	subscribers map[*receiptStreamSubscriber]struct{}
+	mu           sync.Mutex
+	subscribers  map[*receiptStreamSubscriber]struct{}
+	feedArrivals map[arbutil.MessageIndex]time.Time // messages received from the feed and not digested yet
 }
 
 type receiptStreamSubscriber struct {
@@ -64,7 +71,7 @@ type receiptStreamSubscriber struct {
 }
 
 func newReceiptStream() *ReceiptStream {
-	return &ReceiptStream{subscribers: make(map[*receiptStreamSubscriber]struct{})}
+	return &ReceiptStream{subscribers: make(map[*receiptStreamSubscriber]struct{}), feedArrivals: make(map[arbutil.MessageIndex]time.Time)}
 }
 
 func (s *ReceiptStream) subscribe() *receiptStreamSubscriber {
@@ -100,16 +107,32 @@ func (s *ReceiptStream) publishReceipt(header *types.Header, txIndex int, txHash
 	})
 }
 
-func (s *ReceiptStream) publishBlock(block *types.Block) {
+// recordFeedArrival keeps the first arrival of a message; a message received again from another feed keeps its earlier time.
+func (s *ReceiptStream) recordFeedArrival(msgIdx arbutil.MessageIndex, arrivedAt time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, ok := s.feedArrivals[msgIdx]; !ok {
+		s.feedArrivals[msgIdx] = arrivedAt
+	}
+}
+
+func (s *ReceiptStream) publishBlock(block *types.Block, msgIdx arbutil.MessageIndex) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	feedArrivedAt := s.feedArrivals[msgIdx]
+	// Messages up to msgIdx are digested; a message re-sent by the feed after being digested is dropped here too.
+	for idx := range s.feedArrivals {
+		if idx <= msgIdx {
+			delete(s.feedArrivals, idx)
+		}
+	}
 	if len(s.subscribers) == 0 {
 		return
 	}
 	s.sendLocked(&ReceiptStreamEvent{
 		BlockNumber:    hexutil.Uint64(block.NumberU64()),
 		BlockTimestamp: hexutil.Uint64(block.Time()),
-		Block:          &StreamedBlock{Hash: block.Hash(), TransactionCount: hexutil.Uint(len(block.Transactions()))},
+		Block:          &StreamedBlock{Hash: block.Hash(), TransactionCount: hexutil.Uint(len(block.Transactions())), FeedArrivedAt: feedArrivedAt},
 	})
 }
 

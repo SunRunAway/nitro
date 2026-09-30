@@ -76,6 +76,8 @@ type TransactionStreamer struct {
 
 	nextAllowedFeedReorgLog time.Time
 
+	feedArrivalHook func(arbutil.MessageIndex, time.Time) // set before Start, see SetFeedArrivalHook
+
 	broadcasterQueuedMessages            []arbostypes.MessageWithMetadataAndBlockInfo
 	broadcasterQueuedMessagesFirstMsgIdx atomic.Uint64
 	broadcasterQueuedMessagesActiveReorg bool
@@ -636,6 +638,12 @@ func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
 	return arbutil.MessageIndex(firstMsgIdx + uint64(len(s.broadcasterQueuedMessages)))
 }
 
+// SetFeedArrivalHook sets a hook called with the index and arrival time of every valid message received from the feed,
+// before the message is added. It must be called before Start.
+func (s *TransactionStreamer) SetFeedArrivalHook(hook func(arbutil.MessageIndex, time.Time)) {
+	s.feedArrivalHook = hook
+}
+
 func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
 		return nil
@@ -657,6 +665,11 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*message.Broad
 		}
 		messages = append(messages, msgWithBlockInfo)
 		expectedMsgIdx++
+	}
+	if s.feedArrivalHook != nil {
+		for _, feedMessage := range feedMessages {
+			s.feedArrivalHook(feedMessage.SequenceNumber, feedMessage.ArrivedAt)
+		}
 	}
 
 	s.insertionMutex.Lock()

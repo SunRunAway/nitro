@@ -42,7 +42,11 @@ func TestReceiptStreamSubscription(t *testing.T) {
 	stream.publishReceipt(header, 1, txHash, []*types.Log{{Address: pool, Topics: []common.Hash{topic}, Data: []byte{1, 2}, Index: 3}})
 	tx := types.NewTx(&types.LegacyTx{Nonce: 1})
 	block := types.NewBlock(header, &types.Body{Transactions: types.Transactions{tx}}, nil, trie.NewStackTrie(nil))
-	stream.publishBlock(block)
+	// A message received again from another feed keeps its first arrival.
+	arrivedAt := time.Unix(1700000000, 123456789).UTC()
+	stream.recordFeedArrival(6, arrivedAt)
+	stream.recordFeedArrival(6, arrivedAt.Add(time.Millisecond))
+	stream.publishBlock(block, 6)
 
 	next := func() ReceiptStreamEvent {
 		t.Helper()
@@ -63,7 +67,8 @@ func TestReceiptStreamSubscription(t *testing.T) {
 	require.Equal(t, &StreamedReceipt{TransactionIndex: 1, TxHash: txHash, Logs: []StreamedLog{{Address: pool, Topics: []common.Hash{topic}, Data: []byte{1, 2}, Index: 3}}}, got.Receipt)
 	got = next()
 	require.Nil(t, got.Receipt)
-	require.Equal(t, &StreamedBlock{Hash: block.Hash(), TransactionCount: 1}, got.Block)
+	require.Equal(t, &StreamedBlock{Hash: block.Hash(), TransactionCount: 1, FeedArrivedAt: arrivedAt}, got.Block)
+	require.Empty(t, stream.feedArrivals)
 }
 
 // A subscriber that falls behind must not block block production; the dropped events show up as a gap.
