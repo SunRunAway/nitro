@@ -304,11 +304,11 @@ func ProduceBlock(
 	return ProduceBlockWithReceiptHook(message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, isMsgForPrefetch, runCtx, exposeMultiGas, nil)
 }
 
-// ProduceBlockWithReceiptHook is ProduceBlock with an optional onReceipt, called synchronously right after
-// each transaction's receipt is added to the block, in transaction order. The header passed to onReceipt is
-// still being built: its number and time are final, its hash is not. Receipts and logs get their final block
-// hash only after the whole block is produced, and the block may still fail to be produced after onReceipt
-// has been called.
+// ProduceBlockWithReceiptHook is ProduceBlock with an optional onReceipt, called synchronously in transaction
+// order as soon as a transaction has been executed and has passed the post-transaction filters, before its
+// state is finalised and its receipt is built. From then on the transaction is part of the block unless the
+// whole block fails to be produced. The header passed to onReceipt is still being built: its number and time
+// are final, its hash is not; the logs carry their final positions in the block but not the final block hash.
 func ProduceBlockWithReceiptHook(
 	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
@@ -318,7 +318,7 @@ func ProduceBlockWithReceiptHook(
 	isMsgForPrefetch bool,
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
-	onReceipt func(*types.Header, *types.Receipt),
+	onReceipt func(header *types.Header, txIndex int, txHash common.Hash, logs []*types.Log),
 ) (*types.Block, *state.StateDB, types.Receipts, error) {
 	chainConfig := chainContext.Config()
 	lastArbosVersion := types.DeserializeHeaderExtraInformation(lastBlockHeader).ArbOSFormatVersion
@@ -361,7 +361,7 @@ func produceBlockAdvanced(
 	runCtx *core.MessageRunContext,
 	exposeMultiGas bool,
 	addressChecker state.AddressChecker,
-	onReceipt func(*types.Header, *types.Receipt),
+	onReceipt func(header *types.Header, txIndex int, txHash common.Hash, logs []*types.Log),
 ) (*types.Block, *state.StateDB, types.Receipts, error) {
 
 	arbState, err := arbosState.OpenSystemArbosState(statedb, nil, false)
@@ -575,6 +575,9 @@ func produceBlockAdvanced(
 							return err
 						}
 					}
+					if onReceipt != nil {
+						onReceipt(header, len(buildState.receipts), tx.Hash(), buildState.statedb.GetLogs(tx.Hash(), header.Number.Uint64(), common.Hash{}, header.Time))
+					}
 					return nil
 				},
 			)
@@ -723,9 +726,6 @@ func produceBlockAdvanced(
 
 		buildState.complete = append(buildState.complete, tx)
 		buildState.receipts = append(buildState.receipts, receipt)
-		if onReceipt != nil {
-			onReceipt(header, receipt)
-		}
 
 		if isUserTx {
 			if buildState.activeGroupCP == nil {

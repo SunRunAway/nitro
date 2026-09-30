@@ -1037,7 +1037,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	}
 
 	// Only blocks digested from the transaction streamer are streamed; prefetch runs ahead speculatively.
-	var onReceipt func(*types.Header, *types.Receipt)
+	var onReceipt func(*types.Header, int, common.Hash, []*types.Log)
 	if !isMsgForPrefetch && !isDelayedSequencing {
 		onReceipt = s.receiptStream.publishReceipt
 	}

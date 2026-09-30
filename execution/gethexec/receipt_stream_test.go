@@ -38,8 +38,8 @@ func TestReceiptStreamSubscription(t *testing.T) {
 	header := &types.Header{Number: big.NewInt(7), Time: 1700000000}
 	pool := common.HexToAddress("0x1234")
 	topic := common.HexToHash("0xabcd")
-	receipt := &types.Receipt{TxHash: common.HexToHash("0x77"), TransactionIndex: 1, Logs: []*types.Log{{Address: pool, Topics: []common.Hash{topic}, Data: []byte{1, 2}, Index: 3}}}
-	stream.publishReceipt(header, receipt)
+	txHash := common.HexToHash("0x77")
+	stream.publishReceipt(header, 1, txHash, []*types.Log{{Address: pool, Topics: []common.Hash{topic}, Data: []byte{1, 2}, Index: 3}})
 	tx := types.NewTx(&types.LegacyTx{Nonce: 1})
 	block := types.NewBlock(header, &types.Body{Transactions: types.Transactions{tx}}, nil, trie.NewStackTrie(nil))
 	stream.publishBlock(block)
@@ -60,7 +60,7 @@ func TestReceiptStreamSubscription(t *testing.T) {
 	require.Equal(t, uint64(7), uint64(got.BlockNumber))
 	require.Equal(t, uint64(1700000000), uint64(got.BlockTimestamp))
 	require.Nil(t, got.Block)
-	require.Equal(t, &StreamedReceipt{TransactionIndex: 1, TxHash: receipt.TxHash, Logs: []StreamedLog{{Address: pool, Topics: []common.Hash{topic}, Data: []byte{1, 2}, Index: 3}}}, got.Receipt)
+	require.Equal(t, &StreamedReceipt{TransactionIndex: 1, TxHash: txHash, Logs: []StreamedLog{{Address: pool, Topics: []common.Hash{topic}, Data: []byte{1, 2}, Index: 3}}}, got.Receipt)
 	got = next()
 	require.Nil(t, got.Receipt)
 	require.Equal(t, &StreamedBlock{Hash: block.Hash(), TransactionCount: 1}, got.Block)
@@ -71,15 +71,15 @@ func TestReceiptStreamDropsForLaggingSubscriber(t *testing.T) {
 	stream := newReceiptStream()
 	sub := stream.subscribe()
 	header := &types.Header{Number: big.NewInt(1)}
-	publish := func(index uint) {
-		stream.publishReceipt(header, &types.Receipt{TransactionIndex: index})
+	publish := func(index int) {
+		stream.publishReceipt(header, index, common.Hash{}, nil)
 	}
-	for i := range uint(receiptStreamBuffer + 2) {
+	for i := range receiptStreamBuffer + 2 {
 		publish(i)
 	}
-	for i := range uint(receiptStreamBuffer) {
-		require.Equal(t, i, uint((<-sub.events).Receipt.TransactionIndex))
+	for i := range receiptStreamBuffer {
+		require.Equal(t, i, int((<-sub.events).Receipt.TransactionIndex))
 	}
 	publish(receiptStreamBuffer + 2)
-	require.Equal(t, uint(receiptStreamBuffer+2), uint((<-sub.events).Receipt.TransactionIndex))
+	require.Equal(t, receiptStreamBuffer+2, int((<-sub.events).Receipt.TransactionIndex))
 }

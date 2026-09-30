@@ -18,7 +18,8 @@ const receiptStreamBuffer = 4096
 
 // ReceiptStreamEvent is one notification of the arbstream_subscribe("receipts") subscription.
 // Only blocks digested from the transaction streamer are streamed. While such a block is produced,
-// one event with Receipt set is sent right after each transaction is applied, in transaction order.
+// one event with Receipt set is sent as soon as each transaction has been executed and accepted into the block,
+// before its state is finalised, in transaction order.
 // Once the whole block is written to the database, one event with Block set is sent, so reads at that block
 // succeed. Events of a block that fails to be produced or written are not retracted; the block is produced again
 // from its first transaction. Events a subscriber cannot keep up with are dropped, which the subscriber sees as a gap in
@@ -30,7 +31,7 @@ type ReceiptStreamEvent struct {
 	Block          *StreamedBlock   `json:"block,omitempty"`
 }
 
-// StreamedReceipt is the receipt of one applied transaction; the block hash is not known yet.
+// StreamedReceipt is the receipt of one accepted transaction; the block hash is not known yet.
 type StreamedReceipt struct {
 	TransactionIndex hexutil.Uint  `json:"transactionIndex"`
 	TxHash           common.Hash   `json:"transactionHash"`
@@ -81,21 +82,21 @@ func (s *ReceiptStream) unsubscribe(sub *receiptStreamSubscriber) {
 }
 
 // publishReceipt is the receipt hook of arbos.ProduceBlockWithReceiptHook.
-func (s *ReceiptStream) publishReceipt(header *types.Header, receipt *types.Receipt) {
+func (s *ReceiptStream) publishReceipt(header *types.Header, txIndex int, txHash common.Hash, txLogs []*types.Log) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.subscribers) == 0 {
 		return
 	}
 	// Copy now: the block producer later rewrites the block hash of these logs.
-	logs := make([]StreamedLog, len(receipt.Logs))
-	for i, entry := range receipt.Logs {
+	logs := make([]StreamedLog, len(txLogs))
+	for i, entry := range txLogs {
 		logs[i] = StreamedLog{Address: entry.Address, Topics: entry.Topics, Data: entry.Data, Index: hexutil.Uint(entry.Index)}
 	}
 	s.sendLocked(&ReceiptStreamEvent{
 		BlockNumber:    hexutil.Uint64(header.Number.Uint64()),
 		BlockTimestamp: hexutil.Uint64(header.Time),
-		Receipt:        &StreamedReceipt{TransactionIndex: hexutil.Uint(receipt.TransactionIndex), TxHash: receipt.TxHash, Logs: logs},
+		Receipt:        &StreamedReceipt{TransactionIndex: hexutil.Uint(txIndex), TxHash: txHash, Logs: logs},
 	})
 }
 
