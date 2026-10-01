@@ -54,3 +54,7 @@ jobs:
 
       - name: Test
         run: go test -count=1 -run 'TestReceiptStream' ./execution/gethexec/
+
+      - name: Test go-ethereum freezer reads
+        working-directory: go-ethereum
+        run: go test -count=1 -run 'TestRecentBlockReadsSkipFreezerLock' ./core/rawdb/
